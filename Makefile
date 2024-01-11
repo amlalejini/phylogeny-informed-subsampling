@@ -12,7 +12,7 @@ MAIN_CPP ?= source/${PROJECT}.cpp
 CFLAGS_all := -Wall -Wno-unused-function -std=c++17 -lstdc++fs -I$(EMP_DIR)/ -Iinclude/ -Ithird-party/ -I$(SGP_DIR)/ -I$(PSB_DIR)/
 
 # Native compiler information
-CXX_nat := g++-12
+CXX_nat := g++
 CFLAGS_nat := -O3 -DNDEBUG $(CFLAGS_all) # -msse4.2
 CFLAGS_nat_debug := -g -DEMP_TRACK_MEM $(CFLAGS_all)
 
