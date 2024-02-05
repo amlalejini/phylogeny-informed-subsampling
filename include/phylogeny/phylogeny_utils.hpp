@@ -90,6 +90,10 @@ struct taxon_info {
     return phenotype;
   }
 
+  const std::unordered_map<std::string, int>& GetMutations() const {
+    return mut_counts;
+  }
+
   double GetTraitScore(size_t i) const {
     return phenotype[i];
   }
@@ -123,6 +127,12 @@ struct taxon_info {
 
   void RecordFitness(double fit) {
     fitness.Add(fit);
+  }
+
+  void RecordMutation(
+    const std::unordered_map<std::string, int>& mutations
+  ) {
+    mut_counts = mutations;
   }
 
   void RecordPhenotype(

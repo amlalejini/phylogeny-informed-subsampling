@@ -22,6 +22,7 @@ public:
 protected:
   phenotype_t phenotype;
   genome_t genome;
+  std::unordered_map<std::string, int> mutations;
 
   size_t pop_id = 0;
 
@@ -51,6 +52,15 @@ public:
   void UpdatePhenotype(size_t test_id, const TestResult& test_result) {
     phenotype.Update(test_id, test_result);
   }
+
+  void SetMutations(const std::unordered_map<std::string, int>& muts) {
+    mutations = muts;
+  }
+
+  const std::unordered_map<std::string, int>& GetMutations() const {
+    return mutations;
+  }
+
 
 };
 

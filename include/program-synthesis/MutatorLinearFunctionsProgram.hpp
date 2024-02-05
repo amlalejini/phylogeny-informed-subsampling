@@ -88,6 +88,21 @@ protected:
 
   std::unordered_map<MUTATION_TYPES, int> last_mutation_tracker;
 
+  std::unordered_map<MUTATION_TYPES, std::string> mut_type_to_str = {
+    {MUTATION_TYPES::INST_ARG_SUB, "INST_ARG_SUB"},
+    {MUTATION_TYPES::INST_TAG_BIT_FLIP, "INST_TAG_BIT_FLIP"},
+    {MUTATION_TYPES::INST_TAG_BIT_SEQ_RANDOMIZATION, "INST_TAG_BIT_SEQ_RANDOMIZATION"},
+    {MUTATION_TYPES::INST_SUB, "INST_SUB"},
+    {MUTATION_TYPES::INST_INS, "INST_INS"},
+    {MUTATION_TYPES::INST_DEL, "INST_DEL"},
+    {MUTATION_TYPES::SEQ_SLIP_DUP, "SEQ_SLIP_DUP"},
+    {MUTATION_TYPES::SEQ_SLIP_DEL, "SEQ_SLIP_DEL"},
+    {MUTATION_TYPES::FUNC_DUP, "FUNC_DUP"},
+    {MUTATION_TYPES::FUNC_DEL, "FUNC_DEL"},
+    {MUTATION_TYPES::FUNC_TAG_BIT_FLIP, "FUNC_TAG_BIT_FLIP"},
+    {MUTATION_TYPES::FUNC_TAG_BIT_SEQ_RANDOMIZATION, "FUNC_TAG_BIT_SEQ_RANDOMIZATION"}
+  };
+
   // emp::vector<std::function<size_t(emp::Random &, program_t &)>> active_mutations;
 
 public:
@@ -115,6 +130,10 @@ public:
   }
   std::unordered_map<MUTATION_TYPES, int>& GetLastMutations() {
     return last_mutation_tracker;
+  }
+
+  std::string GetMutationTypeStr(MUTATION_TYPES mut_type) const {
+    return mut_type_to_str.at(mut_type);
   }
 
   void SetProgFunctionCntRange(const emp::Range<size_t>& val) { prog_func_cnt_range = val; }
@@ -326,6 +345,9 @@ public:
   size_t ApplySeqSlips(emp::Random& rnd, program_t& program) {
     size_t mut_cnt =0;
     size_t expected_prog_len = program.GetInstCount();
+    size_t total_dup = 0;
+    size_t total_del = 0;
+
     // Perform per-function slip mutations.
     for (size_t fID = 0; fID < program.GetSize(); ++fID) {
       if (!rnd.P(rate_seq_slip) || program[fID].GetSize() == 0) continue; // don't do it here
@@ -349,7 +371,8 @@ public:
         }
         program[fID] = new_function;
         ++mut_cnt;
-        ++last_mutation_tracker[MUTATION_TYPES::SEQ_SLIP_DUP];
+        emp_assert(dup_size >= 0);
+        total_dup += (size_t)dup_size;
         expected_prog_len += (size_t)dup_size;
       } else if (del && (program[fID].GetSize() - (size_t)del_size) >= prog_func_inst_range.GetLower()) {
         // Delete end:begin
@@ -360,11 +383,14 @@ public:
           new_function.PushInst(program[fID][i]);
         program[fID] = new_function;
         ++mut_cnt;
-        ++last_mutation_tracker[MUTATION_TYPES::SEQ_SLIP_DEL];
+        emp_assert(del_size >= 0);
+        total_del += (size_t)del_size;
         expected_prog_len -= (size_t)del_size;
       }
     }
-   return mut_cnt;
+    last_mutation_tracker[MUTATION_TYPES::SEQ_SLIP_DUP] = total_dup;
+    last_mutation_tracker[MUTATION_TYPES::SEQ_SLIP_DEL] = total_del;
+    return mut_cnt;
   }
 
   /// Apply function duplications to program (per-function).
