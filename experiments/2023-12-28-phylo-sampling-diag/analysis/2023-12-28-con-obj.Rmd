@@ -1,4 +1,4 @@
-# 2023-12-28 - Contradictory objectives diagnostics
+# Contradictory objectives diagnostic
 
 ```{r}
 experiment_slug <- "2023-12-28-phylo-sampling-diag"
@@ -161,7 +161,7 @@ con_obj_ts_data <- ts_data %>%
 
 ```
 
-Summarize time series data
+Summarize time series data:
 
 ```{r}
 ts_summary_data <- ts_data %>%
@@ -383,6 +383,63 @@ ggsave(
 )
 ```
 
+#### Statistics
+
+First, we'll create a table of median / mean values for easy reference.
+
+```{r}
+con_obj_summary_data %>%
+  group_by(DIAGNOSTIC, SELECTION, evals_per_gen, eval_label) %>%
+  summarize(
+    cov_median = median(pop_optimal_trait_coverage),
+    cov_mean = mean(pop_optimal_trait_coverage),
+    replicates = n()
+  ) %>%
+  kable()
+```
+
+Next, we run a Kruskal-Wallis test to check for differences.
+For these tests, we only compare within a single subsampling level (`evals_per_gen`) and within the same selection scheme.
+
+```{r}
+kw_test <- con_obj_summary_data %>%
+  filter(eval_label != "full") %>%
+  group_by(SELECTION, evals_per_gen) %>%
+  kruskal_test(pop_optimal_trait_coverage ~ eval_label) %>%
+  mutate(sig = (p < 0.05)) %>%
+  unite(
+    "comparison_group",
+    SELECTION,
+    evals_per_gen,
+    sep = "_",
+    remove = FALSE
+  )
+kable(kw_test)
+```
+
+```{r}
+# Grab group names of significant comparisons
+sig_kw_groups <- filter(kw_test, p < 0.05)$comparison_group
+
+wrs_test <- con_obj_summary_data %>%
+  unite(
+    "comparison_group",
+    SELECTION,
+    evals_per_gen,
+    sep = "_",
+    remove = FALSE
+  ) %>%
+  filter(
+    eval_label != "full" & comparison_group %in% sig_kw_groups
+  ) %>%
+  group_by(SELECTION, evals_per_gen) %>%
+  pairwise_wilcox_test(pop_optimal_trait_coverage ~ eval_label) %>%
+  adjust_pvalue(method = "holm") %>%
+  add_significance("p.adj")
+
+kable(wrs_test)
+```
+
 ### Over time - lexicase selection
 
 ```{r}
@@ -562,7 +619,7 @@ build_final_score_manuscript_plot <- function(
     scale_x_discrete(
       name = "Subsampling regime",
       breaks = c("down-sample", "down-sample-ancestor", "indiv-rand-sample", "phylo-informed-sample"),
-      labels = c("DS", "DS+EST", "IRS", "ABS")
+      labels = c("DS\n(no est.)", "DS+EST", "IRS", "ABS")
     ) +
     scale_fill_bright() +
     scale_color_bright() +

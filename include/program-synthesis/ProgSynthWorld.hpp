@@ -661,6 +661,13 @@ void ProgSynthWorld::SetupMutator() {
         rnd,
         org.GetGenome().GetProgram()
       );
+      // Annotate the organism with its mutations
+      const auto& last_mutations = mutator->GetLastMutations();
+      std::unordered_map<std::string, int> last_muts_as_strs;
+      for (const auto& pair : last_mutations) {
+        last_muts_as_strs[mutator->GetMutationTypeStr(pair.first)] = pair.second;
+      }
+      org.SetMutations(last_muts_as_strs);
       return mut_cnt;
     }
   );
@@ -1565,6 +1572,16 @@ void ProgSynthWorld::SetupPhylogenyTracking() {
     }
   );
 
+  std::function<void(emp::Ptr<taxon_t>, org_t&)> record_mutations_fun = [this](
+    emp::Ptr<taxon_t> taxon,
+    org_t& org
+  ) {
+    taxon->GetData().RecordMutation(org.GetMutations());
+  };
+  systematics_ptr->OnNew(
+    record_mutations_fun
+  );
+
   // Add phylogeny snapshot functions
   // Fitness (aggregate score)
   systematics_ptr->AddSnapshotFun(
@@ -1582,6 +1599,30 @@ void ProgSynthWorld::SetupPhylogenyTracking() {
       return ss.str();
     },
     "phenotype"
+  );
+
+  // Mutations
+  systematics_ptr->AddSnapshotFun(
+    [](const taxon_t& taxon) {
+      auto& mutations = taxon.GetData().GetMutations();
+      std::stringstream ss;
+      utils::PrintMapping(ss, mutations);
+      return ss.str();
+    },
+    "mutations"
+  );
+
+  // Mutational distance
+  systematics_ptr->AddSnapshotFun(
+    [](const taxon_t& taxon) {
+      auto& mutations = taxon.GetData().GetMutations();
+      int total = 0;
+      for (const auto& pair : mutations) {
+        total += pair.second;
+      }
+      return emp::to_string(total);
+    },
+    "mutational_dist"
   );
 
   // -- taxon estimation information --
