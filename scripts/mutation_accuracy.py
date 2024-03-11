@@ -86,26 +86,40 @@ def exhaustive_would_be_estimation(phylogeny_dict, root_ids, extant_ids):
 
 # Second comparison
 def ancestor_vs_extant_scores(phylogeny_dict, root_ids, extant_ids):
-    accuracies = []
+    """
+    For each extant id, collect accuracy of each of its ancestors for all training cases
+    {
+        "extant_id": [{"accuracy": [...per-training case...], "mut_dist":, "taxon_dist":...}, ...],
+        ...
+    }
+    """
+    accuracies = {}
 
     for extant_id in extant_ids:
-        extant_taxon_info = phylogeny_dict[extant_id]
-        extant_scores = extant_taxon_info['training_cases_true_scores']
-        num_training_cases = len(extant_scores)
-
-        ancestor_scores = []
-        distances = []
+        ancestor_accuracies = []
 
         current_id = extant_id
         distance = 0
         while True:
             current_taxon_info = phylogeny_dict[current_id]
-            if current_taxon_info['ancestor'] == 'NONE':
+            # --- Bookmark ---
+
+            ancestor_scores.extend(current_taxon_info['phenotype'])
+            distances.extend([distance] * num_training_cases)
+
+
+            if current_taxon_info['ancestor'] is None:
                 break
             distance += 1
             current_id = current_taxon_info['ancestor']
-            ancestor_scores.extend(current_taxon_info['phenotype'])
-            distances.extend([distance] * num_training_cases)
+
+        # extant_taxon_info = phylogeny_dict[extant_id]
+        # extant_scores = extant_taxon_info['training_cases_true_scores']
+        # num_training_cases = len(extant_scores)
+        # ancestor_scores = []
+        # distances = []
+
+
 
         for i in range(num_training_cases):
             if i < len(ancestor_scores):
