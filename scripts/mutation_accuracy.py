@@ -1,5 +1,34 @@
 import csv
 
+class SearchResult:
+    def __init__(
+        self,
+        success = False,
+        score = None,
+        source = None,
+        taxon_dist = None,
+        mut_dist = None,
+    ):
+        self.estimate_success = success # Estimation successful?
+        self.estimated_score = score   # Score from source of estimate
+        self.estimate_source = source   # Source id for the estimate
+        self.taxon_distance = taxon_dist    # How many steps in the phylogeny away is the source of the estimate?
+        self.mutation_distance = mut_dist # How mutationally distant is the source of the estimate?
+
+    def SetEstimate(self, score, source, taxon_dist, mut_dist):
+        self.estimate_success = True
+        self.estimated_score = score
+        self.estimate_source = source
+        self.taxon_distance = taxon_dist
+        self.mutation_distance = mut_dist
+
+    def SetFail(self):
+        self.estimate_success = False
+        self.estimated_score = None
+        self.estimate_source = None
+        self.taxon_distance = None
+        self.mutation_distance = None
+
 def read_csv(file_path):
     data = []
     with open(file_path, "r", newline='') as csvfile:
@@ -8,36 +37,52 @@ def read_csv(file_path):
             data.append(row)
     return data
 
-def exhaustive_would_be_estimation_accuracy(phylogeny_dict, root_ids, extant_ids):
-    accuracies = []
+def estimate_score_ancestor_based(taxon_id, training_case_id, phylogeny_dict, root_ids):
+    """
+    Given a taxon_id, training_case_id, the phylogeny, and roots, return SearchResult
+    using ancestor-based estimation.
+    """
+    # taxon_info = phylogeny_dict[taxon_id]
+    estimate = SearchResult()
 
+    # Ancestor-based estimation
+    current_id = taxon_id
+    dist = 0
+    while True:
+        evaluated = False
+        if len(phylogeny_dict[current_id]['training_cases_evaluated']) > 0:
+            evaluated = phylogeny_dict[current_id]['training_cases_evaluated'][training_case_id]
+        if evaluated:
+            estimate.SetEstimate(
+                score = phylogeny_dict[current_id]['phenotype'][training_case_id],
+                source = current_id,
+                taxon_dist = dist,
+                mut_dist = None # TODO - Write function to compute mutational distance
+            )
+            break
+        else:
+            current_id = phylogeny_dict[current_id]['ancestor']
+            dist += 1
+            if current_id in root_ids:
+                break
+
+    return estimate
+
+def exhaustive_would_be_estimation(phylogeny_dict, root_ids, extant_ids):
+    """
+    Given phylogeny, roots, and a set of extant ids,
+    exhaustively estimate every training case for every extant id.
+    """
+    # accuracies = []
+    estimates = []
+    # Loop over extant taxa
     for extant_id in extant_ids:
         taxon_info = phylogeny_dict[extant_id]
         num_training_cases = len(taxon_info['training_cases_true_scores'])
-        estimates = [None for _ in range(num_training_cases)]
-        for training_case_i in range(num_training_cases):
-            current_id = extant_id
-            while True:
-                evaluated = False
-                if len(phylogeny_dict[current_id]['training_cases_evaluated']) > 0:
-                    evaluated = phylogeny_dict[current_id]['training_cases_evaluated'][training_case_i]
-                if evaluated:
-                    estimates[training_case_i] = phylogeny_dict[current_id]['phenotype'][training_case_i]
-                    break
-                else:
-                    current_id = phylogeny_dict[current_id]['ancestor']
-                    if current_id == 'NONE':
-                        break
+        for i in range(num_training_cases):
+            estimates.append(estimate_score_ancestor_based(extant_id, i, phylogeny_dict, root_ids))
 
-        if None not in estimates:
-            correct_count = 0
-            for i in range(num_training_cases):
-                if estimates[i] == taxon_info['training_cases_true_scores'][i]:
-                    correct_count += 1
-            accuracy = correct_count / num_training_cases
-            accuracies.append(accuracy)
-
-    return accuracies
+    return estimates
 
 # Second comparison
 def ancestor_vs_extant_scores(phylogeny_dict, root_ids, extant_ids):
@@ -101,7 +146,7 @@ if __name__ == "__main__":
         phylogeny_dict[taxon_id]['ancestor'] = ancestor
         if ancestor == 'NONE':
             roots.add(taxon_id)
-        
+
         if phylogeny_dict[taxon_id]['destruction_time'] == "inf":
             extant_ids.add(taxon_id)
 
