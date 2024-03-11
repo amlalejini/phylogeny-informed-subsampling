@@ -1,0 +1,125 @@
+import csv
+
+def read_csv(file_path):
+    data = []
+    with open(file_path, "r", newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            data.append(row)
+    return data
+
+def exhaustive_would_be_estimation_accuracy(phylogeny_dict, root_ids, extant_ids):
+    accuracies = []
+
+    for extant_id in extant_ids:
+        taxon_info = phylogeny_dict[extant_id]
+        num_training_cases = len(taxon_info['training_cases_true_scores'])
+        estimates = [None for _ in range(num_training_cases)]
+        for training_case_i in range(num_training_cases):
+            current_id = extant_id
+            while True:
+                evaluated = False
+                if len(phylogeny_dict[current_id]['training_cases_evaluated']) > 0:
+                    evaluated = phylogeny_dict[current_id]['training_cases_evaluated'][training_case_i]
+                if evaluated:
+                    estimates[training_case_i] = phylogeny_dict[current_id]['phenotype'][training_case_i]
+                    break
+                else:
+                    current_id = phylogeny_dict[current_id]['ancestor']
+                    if current_id == 'NONE':
+                        break
+
+        if None not in estimates:
+            correct_count = 0
+            for i in range(num_training_cases):
+                if estimates[i] == taxon_info['training_cases_true_scores'][i]:
+                    correct_count += 1
+            accuracy = correct_count / num_training_cases
+            accuracies.append(accuracy)
+
+    return accuracies
+
+# Second comparison
+def ancestor_vs_extant_scores(phylogeny_dict, root_ids, extant_ids):
+    accuracies = []
+
+    for extant_id in extant_ids:
+        extant_taxon_info = phylogeny_dict[extant_id]
+        extant_scores = extant_taxon_info['training_cases_true_scores']
+        num_training_cases = len(extant_scores)
+
+        ancestor_scores = []
+        distances = []
+
+        current_id = extant_id
+        distance = 0
+        while True:
+            current_taxon_info = phylogeny_dict[current_id]
+            if current_taxon_info['ancestor'] == 'NONE':
+                break
+            distance += 1
+            current_id = current_taxon_info['ancestor']
+            ancestor_scores.extend(current_taxon_info['phenotype'])
+            distances.extend([distance] * num_training_cases)
+
+        for i in range(num_training_cases):
+            if i < len(ancestor_scores):
+                ancestor_score = ancestor_scores[i]
+                extant_score = extant_scores[i]
+                distance_to_ancestor = distances[i]
+                accuracies.append((ancestor_score, extant_score, distance_to_ancestor))
+
+    return accuracies
+
+def parse_list(list_string):
+    list_string = list_string.strip("[]").strip()
+    if list_string == '':
+        return []
+    return list_string.split(',')
+
+if __name__ == "__main__":
+    input_file_path = "/home/sansonm/research_ws/phylogeny-informed-subsampling/output/phylo_1000.csv"
+
+    data = read_csv(input_file_path)
+
+    phylogeny_dict = {}
+    roots = set()
+    extant_ids = set()
+
+    for row_i in range(len(data)):
+        taxon_id = data[row_i]['id']
+        phylogeny_dict[taxon_id] = {key:data[row_i][key] for key in data[row_i]}
+
+        evaluated_cases = parse_list(data[row_i]['training_cases_evaluated'])
+        phenotype_scores = parse_list(data[row_i]['phenotype'])
+        true_scores = parse_list(data[row_i]['training_cases_true_scores'])
+        phylogeny_dict[taxon_id]['phenotype'] = list(map(float, phenotype_scores))
+        phylogeny_dict[taxon_id]['training_cases_true_scores'] = list(map(float, true_scores))
+        phylogeny_dict[taxon_id]['training_cases_evaluated'] = [bool(int(val)) for val in evaluated_cases]
+
+        ancestor = phylogeny_dict[taxon_id]['ancestor_list'].strip('[]')
+        phylogeny_dict[taxon_id]['ancestor'] = ancestor
+        if ancestor == 'NONE':
+            roots.add(taxon_id)
+        
+        if phylogeny_dict[taxon_id]['destruction_time'] == "inf":
+            extant_ids.add(taxon_id)
+
+        phylogeny_dict[taxon_id]['descendents'] = set()
+
+    for taxon_id in phylogeny_dict:
+        if taxon_id in roots:
+            continue
+        ancestor_id = phylogeny_dict[taxon_id]['ancestor']
+        phylogeny_dict[ancestor_id]['descendents'].add(taxon_id)
+
+    would_be_accuracies = exhaustive_would_be_estimation_accuracy(phylogeny_dict, roots, extant_ids)
+    print(f"Would-Be Estimation Accuracy Values: {would_be_accuracies}")
+    proportion_would_be_accuracy = sum(would_be_accuracies) / len(would_be_accuracies)
+    print(f"Would-Be Estimation Accuracy: {proportion_would_be_accuracy:.5f}")
+    print()
+
+    ancestor_accuracy = ancestor_vs_extant_scores(phylogeny_dict, roots, extant_ids)
+    print(f"Ancestor to Extant Score Accuracy Values: {ancestor_accuracy}")
+    # percent_ancestor_accuracy = sum(ancestor_accuracy) / len(ancestor_accuracy)
+    # print(f"Ancestor to Extant Score Accuracy: {percent_ancestor_accuracy:.5f}")
