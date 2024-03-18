@@ -1,4 +1,5 @@
 import csv
+import argparse
 
 class SearchResult:
     def __init__(
@@ -127,9 +128,15 @@ def parse_list(list_string):
     return list_string.split(',')
 
 if __name__ == "__main__":
-    input_file_path = "/home/sansonm/research_ws/phylogeny-informed-subsampling/output/phylo_1000.csv"
+    parser = argparse.ArgumentParser(description="Calculate mutation accuracy statistics")
+    parser.add_argument("--phylo", type=str,  help="Path to phylogeny to analyze")
 
-    data = read_csv(input_file_path)
+    args = parser.parse_args()
+    phylo_file = args.phylo
+
+    # input_file_path = "/home/sansonm/research_ws/phylogeny-informed-subsampling/output/phylo_1000.csv"
+
+    data = read_csv(phylo_file)
 
     phylogeny_dict = {}
     roots = set()
