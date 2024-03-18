@@ -1,5 +1,29 @@
 import csv
 import argparse
+import os
+import statistics
+
+
+def write_csv(output_path, summary_dict):
+    # (1) What's the header?
+    header = list(summary_dict[0].keys())
+    header.sort()
+    # (2) Collect all lines as strings
+    lines = []
+    for info in summary_dict:
+        line_header_info = sorted(list(info.keys()))
+        if line_header_info != header:
+            print("Header mismatch!")
+            exit(-1)
+        line = ",".join([str(info[field]) for field in header])
+        lines.append(line)
+    out_content = ",".join(header) + "\n"
+    out_content += "\n".join(lines)
+
+    with open(output_path, "w") as fp:
+        fp.write(out_content)
+
+    return header
 
 class SearchResult:
     def __init__(
@@ -8,7 +32,7 @@ class SearchResult:
         score = None,
         source = None,
         taxon_dist = None,
-        mut_dist = None,
+        mut_dist = None
     ):
         self.estimate_success = success # Estimation successful?
         self.estimated_score = score   # Score from source of estimate
@@ -29,6 +53,9 @@ class SearchResult:
         self.estimate_source = None
         self.taxon_distance = None
         self.mutation_distance = None
+
+    def __str__(self) -> str:
+        return f"Success:{self.estimate_success}, Score:{self.estimated_score}, Source:{self.estimate_source}, Taxon dist:{self.taxon_distance}, Mut dist:{self.mutation_distance}"
 
 def read_csv(file_path):
     data = []
@@ -73,15 +100,19 @@ def exhaustive_would_be_estimation(phylogeny_dict, root_ids, extant_ids):
     """
     Given phylogeny, roots, and a set of extant ids,
     exhaustively estimate every training case for every extant id.
+    Returns: {
+        "extant_id": [list of SearchResults (per training case)]
+    }
     """
     # accuracies = []
-    estimates = []
+    estimates = {}
     # Loop over extant taxa
     for extant_id in extant_ids:
+        estimates[extant_id] = []
         taxon_info = phylogeny_dict[extant_id]
         num_training_cases = len(taxon_info['training_cases_true_scores'])
         for i in range(num_training_cases):
-            estimates.append(estimate_score_ancestor_based(extant_id, i, phylogeny_dict, root_ids))
+            estimates[extant_id].append(estimate_score_ancestor_based(extant_id, i, phylogeny_dict, root_ids))
 
     return estimates
 
@@ -97,26 +128,35 @@ def ancestor_vs_extant_scores(phylogeny_dict, root_ids, extant_ids):
     accuracies = {}
 
     for extant_id in extant_ids:
-        ancestor_accuracies = []
-        # extant_taxon_info = phylogeny_dict[extant_id]
-        # extant_scores = extant_taxon_info['training_cases_true_scores']
-        # num_training_cases = len(extant_scores)
+        ancestor_accuracies = [] # List of dictionaries
+        # -- Localize extant Info --
+        extant_taxon_info = phylogeny_dict[extant_id]
+        extant_scores = extant_taxon_info['training_cases_true_scores']
+        num_training_cases = len(extant_scores)
 
+        # -- Iteratively walk up ancestors in phylogeny --
         current_id = extant_id
-        distance = 0
-        num_training_cases = 0  # Define the variable "num_training_cases"
+        distance = 0 # Taxon distance
+        mut_dist = 0 # Mutation distance
         while True:
+            # Localize current taxon info
             current_taxon_info = phylogeny_dict[current_id]
-            # --- Bookmark ---
+            current_scores = current_taxon_info["training_cases_true_scores"]
+            # Compute accuracy / distance information
+            ancestor_accuracy_info = {
+                "abs_score_diff": [abs(extant_scores[i] - current_scores[i]) for i in range(num_training_cases)],
+                "mut_dist": None,
+                "taxon_dist": distance
+            }
+            ancestor_accuracies.append(ancestor_accuracy_info)
 
-            ancestor_accuracies.extend(current_taxon_info['phenotype'])
-            distance.extend([distance] * num_training_cases)
-
-
-            if current_taxon_info['ancestor'] is None:
+            if current_id in root_ids:
                 break
             distance += 1
+            # mut_dist += TODO - come back when we have mutation distance implemented
             current_id = current_taxon_info['ancestor']
+
+        accuracies[extant_id] = ancestor_accuracies
 
     return accuracies
 
@@ -134,10 +174,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     phylo_file = args.phylo
 
-    # input_file_path = "/home/sansonm/research_ws/phylogeny-informed-subsampling/output/phylo_1000.csv"
-
     data = read_csv(phylo_file)
 
+    snapshot_update = os.path.basename(phylo_file).split(".")[0]
     phylogeny_dict = {}
     roots = set()
     extant_ids = set()
@@ -170,12 +209,47 @@ if __name__ == "__main__":
         phylogeny_dict[ancestor_id]['descendents'].add(taxon_id)
 
     would_be_estimations = exhaustive_would_be_estimation(phylogeny_dict, roots, extant_ids)
-    print(f"Would-Be Estimation Values: {would_be_estimations}")
+    # ---- Output would-be estimations ----
+    # (1) Rows = per-extant taxon:
+    #     update, summary statistics on accuracy, extant_id
+    output_info = []
+    # per_taxon_estimates = {}
+    for extant_id in would_be_estimations:
+        extant_true_scores = phylogeny_dict[extant_id]["training_cases_true_scores"]
+        extant_estimations = would_be_estimations[extant_id]
+        update = snapshot_update
+        num_successes = sum(int(est.estimate_success) for est in extant_estimations)
+        # Get distribution of estimation errors
+        est_errors = [abs(extant_true_scores[i] - extant_estimations[i].estimated_score) for i in range(len(extant_true_scores)) if extant_estimations[i].estimate_success]
+        # Get distribution of estimation taxon distances
+        est_dists = [extant_estimations[i].taxon_distance for i in range(len(extant_true_scores))]
+        row_info = {
+            "update": snapshot_update,
+            "num_est_successes": num_successes,
+            "extant_id": extant_id,
+            "error_mean": statistics.mean(est_errors),
+            "error_median": statistics.median(est_errors),
+            "error_variance": statistics.variance(est_errors),
+            "est_taxon_dist_mean": statistics.mean(est_dists),
+            "est_taxon_dist_median": statistics.median(est_dists),
+            "est_taxon_dist_variance": statistics.variance(est_dists)
+        }
+        output_info.append(row_info)
+    write_csv("taxon_est_info.csv", output_info)
+
+    # (2) Rows = per-snapshot
+    # (3) Rows = per-training case
+
+    # print(f"Would-Be Estimation Values: {would_be_estimations}")
+    # for est in would_be_estimations:
+    #     print(est)
     # proportion_would_be_estimation = sum(would_be_estimations) / len(would_be_estimations)
     # print(f"Would-Be Estimation: {proportion_would_be_estimation:.5f}")
-    print()
-
+    # print()
     ancestor_accuracy = ancestor_vs_extant_scores(phylogeny_dict, roots, extant_ids)
-    print(f"Ancestor to Extant Score Accuracy Values: {ancestor_accuracy}")
-    # percent_ancestor_accuracy = sum(ancestor_accuracy) / len(ancestor_accuracy)
+    # print(f"Ancestor to Extant Score Accuracy Values: {ancestor_accuracy}")
+    # for extant_id in ancestor_accuracy:
+    #     print(f"---{extant_id}---")
+    #     print(ancestor_accuracy[extant_id])
+    # # percent_ancestor_accuracy = sum(ancestor_accuracy) / len(ancestor_accuracy)
     # print(f"Ancestor to Extant Score Accuracy: {percent_ancestor_accuracy:.5f}")
