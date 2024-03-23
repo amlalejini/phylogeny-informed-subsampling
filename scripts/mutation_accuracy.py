@@ -96,6 +96,7 @@ def estimate_score_ancestor_based(taxon_id, training_case_id, phylogeny_dict, ro
 
     return estimate
 
+# First comparison
 def exhaustive_would_be_estimation(phylogeny_dict, root_ids, extant_ids):
     """
     Given phylogeny, roots, and a set of extant ids,
@@ -160,6 +161,49 @@ def ancestor_vs_extant_scores(phylogeny_dict, root_ids, extant_ids):
 
     return accuracies
 
+# Third comparison (WIP)
+def accuracy_vs_mut_distance(phylogeny_dict, root_ids, extant_ids):
+    """
+    For each extant id, collect accuracy and mutation distance over time for all training cases
+    {
+        "extant_id": [{"accuracy": [...per-training case...], "mut_dist": ...}, ...],
+        ...
+    }
+    """
+    accuracy_mut_distance = {}
+
+    for extant_id in extant_ids:
+        ancestor_accuracies = [] # List of dictionaries
+        # -- Localize extant Info --
+        extant_taxon_info = phylogeny_dict[extant_id]
+        extant_scores = extant_taxon_info['training_cases_true_scores']
+        num_training_cases = len(extant_scores)
+
+        # -- Iteratively walk up ancestors in phylogeny and track time --
+        current_id = extant_id
+        distance = 0 # Taxon distance
+        mut_dist = 0 # Mutation distance
+        time = 0 # Time
+        while True:
+            # Localize current taxon info
+            current_taxon_info = phylogeny_dict[current_id]
+            current_scores = current_taxon_info["training_cases_true_scores"]
+            # Compute accuracy / distance information
+            ancestor_accuracy_info = {
+                "abs_score_diff": [abs(extant_scores[i] - current_scores[i]) for i in range(num_training_cases)],
+                "mut_dist": mut_dist,
+            }
+            ancestor_accuracies.append(ancestor_accuracy_info)
+
+            if current_id in root_ids:
+                break
+            distance += 1
+            # mut_dist += TODO - come back when we have mutation distance implemented
+            current_id = current_taxon_info['ancestor']
+
+        accuracy_mut_distance[extant_id] = ancestor_accuracies
+
+    return accuracy_mut_distance
 
 def parse_list(list_string):
     list_string = list_string.strip("[]").strip()
@@ -207,7 +251,7 @@ if __name__ == "__main__":
             continue
         ancestor_id = phylogeny_dict[taxon_id]['ancestor']
         phylogeny_dict[ancestor_id]['descendents'].add(taxon_id)
-
+    
     would_be_estimations = exhaustive_would_be_estimation(phylogeny_dict, roots, extant_ids)
     # ---- Output would-be estimations ----
     # (1) Rows = per-extant taxon:
@@ -236,20 +280,29 @@ if __name__ == "__main__":
         }
         output_info.append(row_info)
     write_csv("taxon_est_info.csv", output_info)
+    
+    ancestor_accuracy_results = ancestor_vs_extant_scores(phylogeny_dict, roots, extant_ids)
+    # ---- Output ancestor vs. extant scores ----
+    # (1) Rows = per-extant taxon:
+    #     update, summary statistics on accuracy, extant_id
+    ancestor_output_info = []
+    for extant_id in ancestor_accuracy_results:
+        ancestor_accuracies = ancestor_accuracy_results[extant_id]
+        extant_true_scores = phylogeny_dict[extant_id]["training_cases_true_scores"]
+        update = snapshot_update
+        num_cases = len(extant_true_scores)
+        for training_case, accuracy_info in enumerate(ancestor_accuracies):
+            abs_score_diff = accuracy_info["abs_score_diff"]
+            taxon_distance = accuracy_info["taxon_dist"]
+            row_info = {
+                "update": snapshot_update,
+                "extant_id": extant_id,
+                "training_case": training_case,
+                "accuracy_mean": statistics.mean(abs_score_diff),
+                "accuracy_median": statistics.median(abs_score_diff),
+                "accuracy_variance": statistics.variance(abs_score_diff),
+                "taxon_distance": taxon_distance
+            }
+            ancestor_output_info.append(row_info)
 
-    # (2) Rows = per-snapshot
-    # (3) Rows = per-training case
-
-    # print(f"Would-Be Estimation Values: {would_be_estimations}")
-    # for est in would_be_estimations:
-    #     print(est)
-    # proportion_would_be_estimation = sum(would_be_estimations) / len(would_be_estimations)
-    # print(f"Would-Be Estimation: {proportion_would_be_estimation:.5f}")
-    # print()
-    ancestor_accuracy = ancestor_vs_extant_scores(phylogeny_dict, roots, extant_ids)
-    # print(f"Ancestor to Extant Score Accuracy Values: {ancestor_accuracy}")
-    # for extant_id in ancestor_accuracy:
-    #     print(f"---{extant_id}---")
-    #     print(ancestor_accuracy[extant_id])
-    # # percent_ancestor_accuracy = sum(ancestor_accuracy) / len(ancestor_accuracy)
-    # print(f"Ancestor to Extant Score Accuracy: {percent_ancestor_accuracy:.5f}")
+    write_csv("ancestor_vs_extant_score_info.csv", ancestor_output_info)
