@@ -295,7 +295,6 @@ def ancestor_vs_extant_scores(phylogeny_dict, root_ids, extant_ids):
 
     return accuracies
 
-
 def parse_list(list_string):
     list_string = list_string.strip("[]").strip()
     if list_string == '':
