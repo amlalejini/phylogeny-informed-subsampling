@@ -279,6 +279,7 @@ if __name__ == "__main__":
             "est_taxon_dist_variance": statistics.variance(est_dists)
         }
         output_info.append(row_info)
+        
     write_csv("taxon_est_info.csv", output_info)
     
     ancestor_accuracy_results = ancestor_vs_extant_scores(phylogeny_dict, roots, extant_ids)
