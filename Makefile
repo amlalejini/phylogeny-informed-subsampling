@@ -12,12 +12,8 @@ MAIN_CPP ?= source/${PROJECT}.cpp
 CFLAGS_all := -Wall -Wno-unused-function -std=c++17 -lstdc++fs -I$(EMP_DIR)/ -Iinclude/ -Ithird-party/ -I$(SGP_DIR)/ -I$(PSB_DIR)/
 
 # Native compiler information
-<<<<<<< HEAD
-CXX_nat := g++
-=======
 CXX ?= g++
 CXX_nat = $(CXX)
->>>>>>> a77d0103973614dd3563a0b6181706e26ea0da10
 CFLAGS_nat := -O3 -DNDEBUG $(CFLAGS_all) # -msse4.2
 CFLAGS_nat_debug := -g -DEMP_TRACK_MEM $(CFLAGS_all)
 
